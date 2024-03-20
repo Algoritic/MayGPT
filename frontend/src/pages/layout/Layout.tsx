@@ -4,7 +4,7 @@ import Contoso from "../../assets/logo-icon-white.png";
 import { CopyRegular } from "@fluentui/react-icons";
 import { Dialog, Stack, TextField } from "@fluentui/react";
 import { useContext, useEffect, useState } from "react";
-import { HistoryButton, ShareButton } from "../../components/common/Button";
+import { AssistantButton, HistoryButton } from "../../components/common/Button";
 import { AppStateContext } from "../../state/AppProvider";
 import { CosmosDBStatus } from "../../api";
 import ChatFeedbackButton from "../feedback/ChatFeedback";
@@ -34,6 +34,9 @@ const Layout = () => {
         appStateContext?.dispatch({ type: 'TOGGLE_CHAT_HISTORY' })
     };
 
+    const handleAssistantClick = () => {
+        window.open('https://np-mgpt.maybanksandbox.com');
+    };
     useEffect(() => {
         if (copyClicked) {
             setCopyText("Copied URL");
@@ -60,7 +63,7 @@ const Layout = () => {
                         {(appStateContext?.state.isCosmosDBAvailable?.status !== CosmosDBStatus.NotConfigured) &&
                             <HistoryButton onClick={handleHistoryClick} text={appStateContext?.state?.isChatHistoryOpen ? "Hide chat history" : "Show chat history"} />
                         }
-                        <ShareButton onClick={handleShareClick} />
+                        <AssistantButton onClick={handleAssistantClick} />
                         <ChatFeedbackButton />
                     </Stack>
 
