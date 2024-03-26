@@ -1,8 +1,9 @@
 import { UserInfo, ConversationRequest, Conversation, ChatMessage, CosmosDBHealth, CosmosDBStatus } from "./models";
 import { chatHistorySampleData } from "../constants/chatHistory";
+const baseURL = import.meta.env.VITE_BASE;
 
 export async function conversationApi(options: ConversationRequest, abortSignal: AbortSignal): Promise<Response> {
-    const response = await fetch("/conversation", {
+    const response = await fetch(baseURL+"/conversation", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -72,7 +73,7 @@ export const historyList = async (offset=0): Promise<Conversation[] | null> => {
 }
 
 export const historyRead = async (convId: string): Promise<ChatMessage[]> => {
-    const response = await fetch("/history/read", {
+    const response = await fetch(baseURL+"/history/read", {
         method: "POST",
         body: JSON.stringify({
             conversation_id: convId
@@ -119,7 +120,7 @@ export const historyGenerate = async (options: ConversationRequest, abortSignal:
             messages: options.messages
         })
     }
-    const response = await fetch("/history/generate", {
+    const response = await fetch(baseURL+"/history/generate", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -137,7 +138,7 @@ export const historyGenerate = async (options: ConversationRequest, abortSignal:
 }
 
 export const historyUpdate = async (messages: ChatMessage[], convId: string): Promise<Response> => {
-    const response = await fetch("/history/update", {
+    const response = await fetch(baseURL+"/history/update", {
         method: "POST",
         body: JSON.stringify({
             conversation_id: convId,
@@ -162,7 +163,7 @@ export const historyUpdate = async (messages: ChatMessage[], convId: string): Pr
 }
 
 export const historyDelete = async (convId: string) : Promise<Response> => {
-    const response = await fetch("/history/delete", {
+    const response = await fetch(baseURL+"/history/delete", {
         method: "DELETE",
         body: JSON.stringify({
             conversation_id: convId,
@@ -187,7 +188,7 @@ export const historyDelete = async (convId: string) : Promise<Response> => {
 }
 
 export const historyDeleteAll = async () : Promise<Response> => {
-    const response = await fetch("/history/delete_all", {
+    const response = await fetch(baseURL+"/history/delete_all", {
         method: "DELETE",
         body: JSON.stringify({}),
         headers: {
@@ -210,7 +211,7 @@ export const historyDeleteAll = async () : Promise<Response> => {
 }
 
 export const historyClear = async (convId: string) : Promise<Response> => {
-    const response = await fetch("/history/clear", {
+    const response = await fetch(baseURL+"/history/clear", {
         method: "POST",
         body: JSON.stringify({
             conversation_id: convId,
@@ -235,7 +236,7 @@ export const historyClear = async (convId: string) : Promise<Response> => {
 }
 
 export const historyRename = async (convId: string, title: string) : Promise<Response> => {
-    const response = await fetch("/history/rename", {
+    const response = await fetch(baseURL+"/history/rename", {
         method: "POST",
         body: JSON.stringify({
             conversation_id: convId,
@@ -261,7 +262,7 @@ export const historyRename = async (convId: string, title: string) : Promise<Res
 }
 
 export const historyEnsure = async (): Promise<CosmosDBHealth> => {
-    const response = await fetch("/history/ensure", {
+    const response = await fetch(baseURL+"/history/ensure", {
         method: "GET",
     })
     .then(async res => {
@@ -299,7 +300,8 @@ export const historyEnsure = async (): Promise<CosmosDBHealth> => {
 }
 
 export const frontendSettings = async (): Promise<Response | null> => {
-    const response = await fetch("/frontend_settings", {
+    const url = baseURL+baseURL+"/frontend_settings";
+    const response = await fetch(url, {
         method: "GET",
     }).then((res) => {
         return res.json()

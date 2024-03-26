@@ -7,7 +7,7 @@ import copy
 import uuid
 from azure.identity import DefaultAzureCredential
 from base64 import b64encode
-from flask import Flask, Response, request, jsonify, send_from_directory
+from flask import Flask, Response, request, jsonify, send_from_directory, Blueprint
 from dotenv import load_dotenv
 
 from backend.auth.auth_utils import get_authenticated_user_details
@@ -15,18 +15,20 @@ from backend.history.cosmosdbservice import CosmosConversationClient
 
 load_dotenv()
 
-app = Flask(__name__, static_folder="static")
+app = Flask(__name__)
+app_routes = Blueprint('app_routes', __name__, static_folder='static')
 
 # Static Files
-@app.route("/")
+@app_routes.route("/")
 def index():
+    # return f"welcome home"
     return app.send_static_file("index.html")
 
-@app.route("/favicon.ico")
+@app_routes.route("/favicon.ico")
 def favicon():
     return app.send_static_file('favicon.ico')
 
-@app.route("/assets/<path:path>")
+@app_routes.route("/assets/<path:path>")
 def assets(path):
     return send_from_directory("static/assets", path)
 
@@ -116,10 +118,12 @@ ELASTICSEARCH_STRICTNESS = os.environ.get("ELASTICSEARCH_STRICTNESS", SEARCH_STR
 ELASTICSEARCH_EMBEDDING_MODEL_ID = os.environ.get("ELASTICSEARCH_EMBEDDING_MODEL_ID")
 
 # Frontend Settings via Environment Variables
+VITE_BASE = os.environ.get("VITE_BASE")
 AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "true").lower() == "true"
 frontend_settings = { 
     "auth_enabled": AUTH_ENABLED, 
     "feedback_enabled": AZURE_COSMOSDB_ENABLE_FEEDBACK and AZURE_COSMOSDB_DATABASE not in [None, ""],
+    "vite_base": VITE_BASE
 }
 
 message_uuid = ""
@@ -595,7 +599,7 @@ def conversation_without_data(request_body):
         return Response(stream_without_data(response, history_metadata), mimetype='text/event-stream')
 
 
-@app.route("/conversation", methods=["GET", "POST"])
+@app_routes.route("/conversation", methods=["GET", "POST"])
 def conversation():
     request_body = request.json
     return conversation_internal(request_body)
@@ -612,7 +616,7 @@ def conversation_internal(request_body):
         return jsonify({"error": str(e)}), 500
 
 ## Conversation History API ## 
-@app.route("/history/generate", methods=["POST"])
+@app_routes.route("/history/generate", methods=["POST"])
 def add_conversation():
     global message_uuid
     message_uuid = str(uuid.uuid4())
@@ -660,7 +664,7 @@ def add_conversation():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/history/update", methods=["POST"])
+@app_routes.route("/history/update", methods=["POST"])
 def update_conversation():
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user['user_principal_id']
@@ -707,7 +711,7 @@ def update_conversation():
         logging.exception("Exception in /history/update")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/history/message_feedback", methods=["POST"])
+@app_routes.route("/history/message_feedback", methods=["POST"])
 def update_message():
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user['user_principal_id']
@@ -734,7 +738,7 @@ def update_message():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/history/delete", methods=["DELETE"])
+@app_routes.route("/history/delete", methods=["DELETE"])
 def delete_conversation():
     ## get the user id from the request headers
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
@@ -757,7 +761,7 @@ def delete_conversation():
         logging.exception("Exception in /history/delete")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/history/list", methods=["GET"])
+@app_routes.route("/history/list", methods=["GET"])
 def list_conversations():
     offset = request.args.get("offset", 0)
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
@@ -772,7 +776,7 @@ def list_conversations():
 
     return jsonify(conversations), 200
 
-@app.route("/history/read", methods=["POST"])
+@app_routes.route("/history/read", methods=["POST"])
 def get_conversation():
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user['user_principal_id']
@@ -797,7 +801,7 @@ def get_conversation():
 
     return jsonify({"conversation_id": conversation_id, "messages": messages}), 200
 
-@app.route("/history/rename", methods=["POST"])
+@app_routes.route("/history/rename", methods=["POST"])
 def rename_conversation():
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
     user_id = authenticated_user['user_principal_id']
@@ -822,7 +826,7 @@ def rename_conversation():
 
     return jsonify(updated_conversation), 200
 
-@app.route("/history/delete_all", methods=["DELETE"])
+@app_routes.route("/history/delete_all", methods=["DELETE"])
 def delete_all_conversations():
     ## get the user id from the request headers
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
@@ -849,7 +853,7 @@ def delete_all_conversations():
         return jsonify({"error": str(e)}), 500
     
 
-@app.route("/history/clear", methods=["POST"])
+@app_routes.route("/history/clear", methods=["POST"])
 def clear_messages():
     ## get the user id from the request headers
     authenticated_user = get_authenticated_user_details(request_headers=request.headers)
@@ -869,7 +873,7 @@ def clear_messages():
         logging.exception("Exception in /history/clear_messages")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/history/ensure", methods=["GET"])
+@app_routes.route("/history/ensure", methods=["GET"])
 def ensure_cosmos():
     if not AZURE_COSMOSDB_ACCOUNT:
         return jsonify({"error": "CosmosDB is not configured"}), 404
@@ -879,7 +883,15 @@ def ensure_cosmos():
 
     return jsonify({"message": "CosmosDB is configured and working"}), 200
 
-@app.route("/frontend_settings", methods=["GET"])  
+if VITE_BASE:  # Check if VITE_BASE is set
+  url = VITE_BASE + "/frontend_settings"
+else:
+  # Handle case where VITE_BASE is not set (log error, use default value)
+  # ...
+  # Example: Raise an error or use a default base URL
+  raise ValueError("VITE_BASE environment variable is not set")
+  # Or: url = "/default_frontend_settings"
+@app_routes.route(url, methods=["GET"])  
 def get_frontend_settings():
     try:
         return jsonify(frontend_settings), 200
@@ -911,6 +923,9 @@ def generate_title(conversation_messages):
         return title
     except Exception as e:
         return messages[-2]['content']
+
+
+app.register_blueprint(app_routes, url_prefix='/app')
 
 if __name__ == "__main__":
     app.run()
