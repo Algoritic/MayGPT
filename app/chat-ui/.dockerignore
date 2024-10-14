@@ -1,0 +1,14 @@
+# Ignore files and directory
+node_modules
+.git
+.env
+*.log
+.next
+.gitignore
+.dockerignore
+.vscode
+
+# Exclude specific file types
+*.txt
+*.md
+
