@@ -4,7 +4,7 @@ import styles from './ChatFeedbackButton.module.css';
 
 const ChatFeedbackButton = () => {
   const [isDialogVisible, setIsDialogVisible] = useState(false);
-  const surveyUrl = 'https://mpulse.maybanksandbox.com/index.php/638311?lang=en';
+  const surveyUrl = 'https://mpulse.maybanksandbox.com/chatbot';
   
   // This function toggles the visibility of the dialog
   const showDialog = () => {
