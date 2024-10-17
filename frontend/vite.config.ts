@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 // Define a type for environment variables
 
 export default defineConfig({
-    base: './', // Using the value from the environment variable or default to '/'
+    base: 'https://maygpt.maybankazuresandbox.com/compliance', // Using the value from the environment variable or default to '/'
     plugins: [
         react(),
     ],
