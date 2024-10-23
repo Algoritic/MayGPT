@@ -64,6 +64,7 @@ const inlineBlockStyle: Partial<ITooltipHostStyles> = {
 
 const Chat = () => {
   const appStateContext = useContext(AppStateContext);
+  const ui = appStateContext?.state.frontendSettings?.ui;
   const AUTH_ENABLED = appStateContext?.state.frontendSettings?.auth_enabled;
   const chatMessageStreamEnd = useRef<HTMLDivElement | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -749,9 +750,9 @@ const Chat = () => {
                   className={styles.chatIcon}
                   aria-hidden="true"
                 />
-                <h1 className={styles.chatEmptyStateTitle}>Start chatting</h1>
+                <h1 className={styles.chatEmptyStateTitle}>{ui?.chat_title}</h1>
                 <h2 className={styles.chatEmptyStateSubtitle}>
-                  This chatbot is configured to answer your questions
+                  {ui?.chat_description}
                 </h2>
               </Stack>
             ) : (
@@ -980,7 +981,7 @@ const Chat = () => {
                     activeCitation.url &&
                     !activeCitation.url.includes("blob.core")
                       ? activeCitation.url
-                      : (activeCitation.title ?? "")
+                      : activeCitation.title ?? ""
                   }
                   onClick={() => onViewSource(activeCitation)}
                 >

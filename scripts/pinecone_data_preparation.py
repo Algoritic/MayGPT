@@ -2,14 +2,16 @@
 import argparse
 import json
 import os
+import time
 import uuid
+import pinecone
 
 import requests
 from data_utils import Document
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
 from azure.identity import AzureCliCredential
-from pymongo.mongo_client import MongoClient
+
 from typing import List
 
 from data_utils import chunk_directory
@@ -52,10 +54,9 @@ SUPPORTED_LANGUAGE_CODES = {
     "tr": "Turkish"
 }
 
-def check_if_cosmos_mongo_db_exists(
-    account_name: str,
-    subscription_id: str,
-    resource_group: str,
+def check_if_pinecone_environment_exists(
+    environment: str,
+    api_key: str,
     credential = None):
     """_summary_
 
@@ -68,76 +69,54 @@ def check_if_cosmos_mongo_db_exists(
     """
     if credential is None:
         raise ValueError("credential cannot be None")
-    url = (
-        f"https://management.azure.com/subscriptions/{subscription_id}"
-        f"/resourceGroups/{resource_group}/providers/Microsoft.DocumentDB"
-        f"/mongoClusters/{account_name}?api-version=2023-03-01-preview"
-    )   
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {credential.get_token('https://management.azure.com/.default').token}",
-    }
-
-    response = requests.get(url, headers=headers)
-    return response.status_code == 200
+    try:
+        pinecone.init(api_key=api_key, environment=environment)
+    except:
+        raise BaseException("Invalid env or key")
 
 def create_or_update_vector_search_index(
-        mongo_client: MongoClient,
-        database_name: str,
-        collection_name: str,
         index_name,
-        vector_field, 
-        credential, 
-        language):
+        credential):
     if credential is None:
         raise ValueError("credential cannot be None")
 
     try:
-        dbs=mongo_client.list_database_names()
-        if (database_name in dbs):
-            print(f"database {database_name} exist")
-            collections=mongo_client[database_name].list_collection_names()
-            if (collection_name in collections):
-                print(f"collection {collection_name} exist")
+        # check if index already exists (it shouldn't if this is first time)
+        if index_name not in pinecone.list_indexes():
+            # if does not exist, create index
+            pinecone.create_index(
+                index_name,
+                dimension=1536,
+                metric='cosine'
+            )
 
-        mongo_collection = mongo_client[database_name][collection_name]  
-        indexes = mongo_collection.index_information()
-        if (indexes.get(index_name) == None):
-            # Ensure the vector index exists.
-            indexDefs:List[any] = [
-                { "name": index_name, "key": { vector_field: "cosmosSearch" }, "cosmosSearchOptions": { "kind": "vector-ivf", "similarity": "COS", "dimensions": 1536 } }
-            ]
-            mongo_client[database_name].command("createIndexes", collection_name, indexes = indexDefs)
+            # wait for index to be initialized
+            while not pinecone.describe_index(index_name).status['ready']:
+                time.sleep(1)
+
     except Exception as e:
         raise Exception(
-            f"Failed to create vector index {index_name} for collection {collection_name} under database {database_name}. Error: {str(e)}")
+            f"Failed to create vector index {index_name}. Error: {str(e)}")
     return True
-
-def initialize_mongo_client(
-        connection_string: str) -> MongoClient:
-    return MongoClient(connection_string)
      
 def upsert_documents_to_index(
-        mongo_client: MongoClient,
-        database_name: str,
-        collection_name: str,
+        index_name: str,
         docs: List[Document]
         ):
+    
+    index = pinecone.Index(index_name)
     for document in docs:
         finalDocChunk:dict = {}
-        finalDocChunk["_id"] = f"doc:{uuid.uuid4()}"
+        finalDocChunk["id"] = f"{uuid.uuid4()}"
         finalDocChunk['title'] = document.title
         finalDocChunk["filepath"] = document.filepath
-        finalDocChunk["url"] = document.url
+        finalDocChunk["url"] = ""
         finalDocChunk["content"] = document.content
         finalDocChunk["contentvector"] = document.contentVector
-        finalDocChunk["metadata"] = document.metadata
-
-        mongo_collection = mongo_client[database_name][collection_name]
 
         try:
-            mongo_collection.insert_one(finalDocChunk)
+            index.upsert([(finalDocChunk["id"],finalDocChunk["contentvector"], {"title":finalDocChunk['title'], "filepath":finalDocChunk['filepath'],"url":finalDocChunk['url'],"content":finalDocChunk['content']})])
+
             print(f"Upsert doc chunk {document.id} successfully")
         
         except Exception as e:
@@ -145,29 +124,20 @@ def upsert_documents_to_index(
             continue
 
 def validate_index(
-        mongo_client: MongoClient,
-        database_name: str,
-        collection_name: str,
         index_name):
     try:
-        mongo_collection = mongo_client[database_name][collection_name]  
-        indexes = mongo_collection.index_information()
-        if (indexes.get(index_name) == None):
+        if not pinecone.describe_index(index_name).status['ready']:
             raise Exception(
-                f"Failed to create vector index {index_name} for collection {collection_name} under database {database_name}. Error: {str(e)}")
+                f"Failed to create vector index {index_name}. Error: {str(e)}")
 
     except Exception as e:
         raise Exception(
-            f"Failed to validate vector index {index_name} for collection {collection_name} under database {database_name}. Error: {str(e)}")  
+            f"Failed to create vector index {index_name}. Error: {str(e)}")  
 
 def create_index(config, credential, form_recognizer_client=None, embedding_model_endpoint=None, use_layout=False, njobs=4):
-    account_name = config["account_name"]
-    database_name = config["database_name"]
-    collection_name = config["collection_name"]
-    subscription_id = config["subscription_id"]
-    resource_group = config["resource_group"]
+    environment = config["environment"]
+    api_key = config["api_key"]
     index_name = config["index_name"]
-    vector_field = config["vector_field"]
     language = config.get("language", None)
 
     if language and language not in SUPPORTED_LANGUAGE_CODES:
@@ -176,19 +146,17 @@ def create_index(config, credential, form_recognizer_client=None, embedding_mode
                         f"Language is set as two letter code for e.g. 'en' for English."
                         f"If you do not want to set a language just remove this prompt config or set as None")
 
-
-    # check if cosmos mongo vcore database account exists
-    if check_if_cosmos_mongo_db_exists(account_name, subscription_id, resource_group, credential):
-        print(f"Using existing cosmos vcore database account {account_name}")
-    else:
-        # Won't create the database account automatically for user since it needs set admin password
-        raise Exception(f"Database account {account_name} doesn't exist. Please follow this page https://learn.microsoft.com/en-us/azure/cosmos-db/mongodb/vcore/quickstart-portal to create the resource")
-
-    # Initialize Cosmos Mongo Client
-    mongo_client = initialize_mongo_client(config.get("connection_string"))
+    # check if pinecone database account exists
+    try:
+        check_if_pinecone_environment_exists(environment, api_key, credential)
+        print(f"Using existing pinecone environment {environment}")
+    except: 
+        raise Exception(f"Pinecone environment {environment} doesn't exist.")
 
     # create or update vector search index with compatible schema
-    if not create_or_update_vector_search_index(mongo_client, database_name, collection_name, index_name, vector_field, credential, language):
+    try:
+        create_or_update_vector_search_index(index_name, credential)
+    except:
         raise Exception(f"Failed to create or update index {index_name}")
     
     # chunk directory
@@ -209,11 +177,11 @@ def create_index(config, credential, form_recognizer_client=None, embedding_mode
 
     # upsert documents to index
     print("Upserting documents to index...")
-    upsert_documents_to_index(mongo_client, database_name, collection_name, result.chunks)
+    upsert_documents_to_index(index_name, result.chunks)
 
     # check if index is ready/validate index
     print("Validating index...")
-    validate_index(mongo_client, database_name, collection_name, index_name)
+    validate_index(index_name)
     print("Index validation completed")
 
 def valid_range(n):
@@ -224,7 +192,7 @@ def valid_range(n):
 
 if __name__ == "__main__": 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cosmos-config", type=str, help="Path to config file containing settings for data preparation")
+    parser.add_argument("--pinecone-config", type=str, help="Path to config file containing settings for data preparation")
     parser.add_argument("--form-rec-resource", type=str, help="Name of your Form Recognizer resource to use for PDF cracking.")
     parser.add_argument("--form-rec-key", type=str, help="Key for your Form Recognizer resource to use for PDF cracking.")
     parser.add_argument("--form-rec-use-layout", default=False, action='store_true', help="Whether to use Layout model for PDF cracking, if False will use Read model.")
@@ -233,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding-model-key", type=str, help="Key for the embedding model to use for vector search.")
     args = parser.parse_args()
 
-    with open(args.cosmos_config) as f:
+    with open(args.pinecone_config) as f:
         config = json.load(f)
 
     credential = AzureCliCredential()
@@ -251,7 +219,7 @@ if __name__ == "__main__":
         if index_config.get("index_name") and not args.embedding_model_endpoint:
             raise Exception("ERROR: Vector search is enabled in the config, but no embedding model endpoint and key were provided. Please provide these values or disable vector search.")
         print("Preparing data for index:", index_config["index_name"])
-        os.environ["EMBEDDING_MODEL_KEY"] = args.embedding_model_key
+
         create_index(index_config, credential, form_recognizer_client, embedding_model_endpoint=args.embedding_model_endpoint, use_layout=args.form_rec_use_layout, njobs=args.njobs)
         print("Data preparation for index", index_config["index_name"], "completed")
 

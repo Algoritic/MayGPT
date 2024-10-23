@@ -14,6 +14,7 @@ const Layout = () => {
   const [copyClicked, setCopyClicked] = useState<boolean>(false);
   const [copyText, setCopyText] = useState<string>("Copy URL");
   const appStateContext = useContext(AppStateContext);
+  const ui = appStateContext?.state.frontendSettings?.ui;
 
   const handleShareClick = () => {
     setIsSharePanelOpen(true);
@@ -61,7 +62,7 @@ const Layout = () => {
               aria-hidden="true"
             />
             <Link to="/" className={styles.headerTitleContainer}>
-              <h1 className={styles.headerTitle}>MayGPT</h1>
+              <h1 className={styles.headerTitle}>{ui?.title}</h1>
             </Link>
           </Stack>
           <Stack horizontal tokens={{ childrenGap: 4 }}>
