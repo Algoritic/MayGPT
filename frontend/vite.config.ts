@@ -23,6 +23,7 @@ const env = getEnv();
 // https://vitejs.dev/config/
 export default defineConfig({
     base: env.APP_BASE_PATH,
+    envDir: "../",
     plugins: [react()],
     build: {
         outDir: "../static",
