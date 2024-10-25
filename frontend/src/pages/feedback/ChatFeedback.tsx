@@ -18,14 +18,16 @@ const ChatFeedbackButton = () => {
 
   return (
     <>
-      <CommandBarButton
-        iconProps={{ iconName: "Feedback" }} // Make sure to use an existing icon name
-        title="Feedback"
-        ariaLabel="Feedback"
-        text="Feedback"
-        className={styles.chatButton}
-        onClick={showDialog} // Here we call the showDialog function when the button is clicked
-      />
+      {surveyUrl == undefined && (
+        <CommandBarButton
+          iconProps={{ iconName: "Feedback" }} // Make sure to use an existing icon name
+          title="Feedback"
+          ariaLabel="Feedback"
+          text="Feedback"
+          className={styles.chatButton}
+          onClick={showDialog} // Here we call the showDialog function when the button is clicked
+        />
+      )}
       <Dialog
         hidden={!isDialogVisible}
         onDismiss={closeDialog}
