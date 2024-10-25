@@ -6,6 +6,8 @@ const ChatFeedbackButton = () => {
   const [isDialogVisible, setIsDialogVisible] = useState(false);
   const surveyUrl = import.meta.env.VITE_SURVEY_PATH;
 
+  console.log(surveyUrl);
+
   // This function toggles the visibility of the dialog
   const showDialog = () => {
     setIsDialogVisible(true);
@@ -18,16 +20,20 @@ const ChatFeedbackButton = () => {
 
   return (
     <>
-      {surveyUrl == undefined && (
-        <CommandBarButton
-          iconProps={{ iconName: "Feedback" }} // Make sure to use an existing icon name
-          title="Feedback"
-          ariaLabel="Feedback"
-          text="Feedback"
-          className={styles.chatButton}
-          onClick={showDialog} // Here we call the showDialog function when the button is clicked
-        />
-      )}
+      {surveyUrl == undefined &&
+        surveyUrl == null &&
+        surveyUrl === undefined &&
+        surveyUrl === null &&
+        surveyUrl === "" && (
+          <CommandBarButton
+            iconProps={{ iconName: "Feedback" }} // Make sure to use an existing icon name
+            title="Feedback"
+            ariaLabel="Feedback"
+            text="Feedback"
+            className={styles.chatButton}
+            onClick={showDialog} // Here we call the showDialog function when the button is clicked
+          />
+        )}
       <Dialog
         hidden={!isDialogVisible}
         onDismiss={closeDialog}
