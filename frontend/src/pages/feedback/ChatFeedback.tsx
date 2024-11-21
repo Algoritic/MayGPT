@@ -6,8 +6,6 @@ const ChatFeedbackButton = () => {
   const [isDialogVisible, setIsDialogVisible] = useState(false);
   const surveyUrl = import.meta.env.VITE_SURVEY_PATH;
 
-  console.log(surveyUrl);
-
   // This function toggles the visibility of the dialog
   const showDialog = () => {
     setIsDialogVisible(true);

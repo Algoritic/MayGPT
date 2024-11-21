@@ -23,13 +23,14 @@ export type ToolMessageContent = {
 }
 
 export type ChatMessage = {
-    id: string;
-    role: string;
-    content: string;
-    end_turn?: boolean;
-    date: string;
-    feedback?: Feedback;
-};
+    id: string
+    role: string
+    content: string | [{ type: string; text: string }, { type: string; image_url: { url: string } }]
+    end_turn?: boolean
+    date: string
+    feedback?: Feedback
+    context?: string
+}
 
 export type Conversation = {
     id: string;

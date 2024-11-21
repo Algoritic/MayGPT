@@ -97,6 +97,7 @@ const Chat = () => {
   };
 
   const [ASSISTANT, TOOL, ERROR] = ["assistant", "tool", "error"];
+  const NO_CONTENT_ERROR = "No content in messages object.";
 
   useEffect(() => {
     if (
@@ -300,22 +301,35 @@ const Chat = () => {
   };
 
   const makeApiRequestWithCosmosDB = async (
-    question: string,
+    question: ChatMessage["content"],
     conversationId?: string
   ) => {
     setIsLoading(true);
     setShowLoadingMessage(true);
     const abortController = new AbortController();
     abortFuncs.current.unshift(abortController);
+    const questionContent =
+      typeof question === "string"
+        ? question
+        : [
+            { type: "text", text: question[0].text },
+            {
+              type: "image_url",
+              image_url: { url: question[1].image_url.url },
+            },
+          ];
+    question =
+      typeof question !== "string" && question[0]?.text?.length > 0
+        ? question[0].text
+        : question;
 
     const userMessage: ChatMessage = {
       id: uuid(),
       role: "user",
-      content: question,
+      content: questionContent as string,
       date: new Date().toISOString(),
     };
 
-    //api call params set here (generate)
     let request: ConversationRequest;
     let conversation;
     if (conversationId) {
@@ -345,16 +359,22 @@ const Chat = () => {
       setMessages(request.messages);
     }
     let result = {} as ChatResponse;
+    var errorResponseMessage =
+      "Please try again. If the problem persists, please contact the site administrator.";
     try {
       const response = conversationId
         ? await historyGenerate(request, abortController.signal, conversationId)
         : await historyGenerate(request, abortController.signal);
       if (!response?.ok) {
+        const responseJson = await response.json();
+        errorResponseMessage =
+          responseJson.error === undefined
+            ? errorResponseMessage
+            : parseErrorMessage(responseJson.error);
         let errorChatMsg: ChatMessage = {
           id: uuid(),
           role: ERROR,
-          content:
-            "There was an error generating a response. Chat history can't be saved at this time. If the problem persists, please contact the site administrator.",
+          content: `There was an error generating a response. Chat history can't be saved at this time. ${errorResponseMessage}`,
           date: new Date().toISOString(),
         };
         let resultConversation;
@@ -390,8 +410,8 @@ const Chat = () => {
       }
       if (response?.body) {
         const reader = response.body.getReader();
-        let runningText = "";
 
+        let runningText = "";
         while (true) {
           setProcessMessages(messageStatus.Processing);
           const { done, value } = await reader.read();
@@ -401,18 +421,45 @@ const Chat = () => {
           const objects = text.split("\n");
           objects.forEach((obj) => {
             try {
-              runningText += obj;
-              result = JSON.parse(runningText);
-              result.choices[0].messages.forEach((obj) => {
-                obj.id = result.id;
-                obj.date = new Date().toISOString();
-              });
-              setShowLoadingMessage(false);
-              result.choices[0].messages.forEach((resultObj) => {
-                processResultMessage(resultObj, userMessage, conversationId);
-              });
-              runningText = "";
-            } catch {}
+              if (obj !== "" && obj !== "{}") {
+                runningText += obj;
+                result = JSON.parse(runningText);
+                if (!result.choices?.[0]?.messages?.[0].content) {
+                  errorResponseMessage = NO_CONTENT_ERROR;
+                  throw Error();
+                }
+                if (result.choices?.length > 0) {
+                  result.choices[0].messages.forEach((msg) => {
+                    msg.id = result.id;
+                    msg.date = new Date().toISOString();
+                  });
+                  if (
+                    result.choices[0].messages?.some(
+                      (m) => m.role === ASSISTANT
+                    )
+                  ) {
+                    setShowLoadingMessage(false);
+                  }
+                  result.choices[0].messages.forEach((resultObj) => {
+                    processResultMessage(
+                      resultObj,
+                      userMessage,
+                      conversationId
+                    );
+                  });
+                }
+                runningText = "";
+              } else if (result.error) {
+                throw Error(result.error);
+              }
+            } catch (e) {
+              if (!(e instanceof SyntaxError)) {
+                console.error(e);
+                throw e;
+              } else {
+                console.log("Incomplete message. Continuing...");
+              }
+            }
           });
         }
 
@@ -462,13 +509,15 @@ const Chat = () => {
       }
     } catch (e) {
       if (!abortController.signal.aborted) {
-        let errorMessage =
-          "An error occurred. Please try again. If the problem persists, please contact the site administrator.";
+        let errorMessage = `An error occurred. ${errorResponseMessage}`;
         if (result.error?.message) {
           errorMessage = result.error.message;
         } else if (typeof result.error === "string") {
           errorMessage = result.error;
         }
+
+        errorMessage = parseErrorMessage(errorMessage);
+
         let errorChatMsg: ChatMessage = {
           id: uuid(),
           role: ERROR,
@@ -493,6 +542,13 @@ const Chat = () => {
         } else {
           if (!result.history_metadata) {
             console.error("Error retrieving data.", result);
+            let errorChatMsg: ChatMessage = {
+              id: uuid(),
+              role: ERROR,
+              content: errorMessage,
+              date: new Date().toISOString(),
+            };
+            setMessages([...messages, userMessage, errorChatMsg]);
             setIsLoading(false);
             setShowLoadingMessage(false);
             abortFuncs.current = abortFuncs.current.filter(
@@ -564,6 +620,69 @@ const Chat = () => {
       }
     }
     setClearingChat(false);
+  };
+
+  const tryGetRaiPrettyError = (errorMessage: string) => {
+    try {
+      // Using a regex to extract the JSON part that contains "innererror"
+      const match = errorMessage.match(/'innererror': ({.*})\}\}/);
+      if (match) {
+        // Replacing single quotes with double quotes and converting Python-like booleans to JSON booleans
+        const fixedJson = match[1]
+          .replace(/'/g, '"')
+          .replace(/\bTrue\b/g, "true")
+          .replace(/\bFalse\b/g, "false");
+        const innerErrorJson = JSON.parse(fixedJson);
+        let reason = "";
+        // Check if jailbreak content filter is the reason of the error
+        const jailbreak = innerErrorJson.content_filter_result.jailbreak;
+        if (jailbreak.filtered === true) {
+          reason = "Jailbreak";
+        }
+
+        // Returning the prettified error message
+        if (reason !== "") {
+          return (
+            "The prompt was filtered due to triggering Azure OpenAI’s content filtering system.\n" +
+            "Reason: This prompt contains content flagged as " +
+            reason +
+            "\n\n" +
+            "Please modify your prompt and retry. Learn more: https://go.microsoft.com/fwlink/?linkid=2198766"
+          );
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse the error:", e);
+    }
+    return errorMessage;
+  };
+
+  const parseErrorMessage = (errorMessage: string) => {
+    let errorCodeMessage = errorMessage.substring(
+      0,
+      errorMessage.indexOf("-") + 1
+    );
+    const innerErrorCue = "{\\'error\\': {\\'message\\': ";
+    if (errorMessage.includes(innerErrorCue)) {
+      try {
+        let innerErrorString = errorMessage.substring(
+          errorMessage.indexOf(innerErrorCue)
+        );
+        if (innerErrorString.endsWith("'}}")) {
+          innerErrorString = innerErrorString.substring(
+            0,
+            innerErrorString.length - 3
+          );
+        }
+        innerErrorString = innerErrorString.replaceAll("\\'", "'");
+        let newErrorMessage = errorCodeMessage + " " + innerErrorString;
+        errorMessage = newErrorMessage;
+      } catch (e) {
+        console.error("Error parsing inner error message: ", e);
+      }
+    }
+
+    return tryGetRaiPrettyError(errorMessage);
   };
 
   const newChat = () => {
@@ -673,7 +792,11 @@ const Chat = () => {
   };
 
   const parseCitationFromMessage = (message: ChatMessage) => {
-    if (message?.role && message?.role === "tool") {
+    if (
+      message?.role &&
+      message?.role === "tool" &&
+      typeof message?.content === "string"
+    ) {
       try {
         const toolMessage = JSON.parse(message.content) as ToolMessageContent;
         return toolMessage.citations;
@@ -766,22 +889,43 @@ const Chat = () => {
                     {answer.role === "user" ? (
                       <div className={styles.chatMessageUser} tabIndex={0}>
                         <div className={styles.chatMessageUserMessage}>
-                          {answer.content}
+                          {typeof answer.content === "string" &&
+                          answer.content ? (
+                            answer.content
+                          ) : Array.isArray(answer.content) ? (
+                            <>
+                              {answer.content[0].text}{" "}
+                              <img
+                                className={styles.uploadedImageChat}
+                                src={answer.content[1].image_url.url}
+                                alt="Uploaded Preview"
+                              />
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     ) : answer.role === "assistant" ? (
                       <div className={styles.chatMessageGpt}>
-                        <Answer
-                          answer={{
-                            answer: answer.content,
-                            citations: parseCitationFromMessage(
-                              messages[index - 1]
-                            ),
-                            message_id: answer.id,
-                            feedback: answer.feedback,
-                          }}
-                          onCitationClicked={(c) => onShowCitation(c)}
-                        />
+                        {typeof answer.content === "string" && (
+                          <Answer
+                            answer={{
+                              answer: answer.content,
+                              citations: parseCitationFromMessage(
+                                messages[index - 1]
+                              ),
+                              // generated_chart: parsePlotFromMessage(
+                              //   messages[index - 1]
+                              // ),
+                              message_id: answer.id,
+                              feedback: answer.feedback,
+                              //exec_results: execResults,
+                            }}
+                            onCitationClicked={(c) => onShowCitation(c)}
+                            // onExectResultClicked={() =>
+                            //   onShowExecResult(answerId)
+                            // }
+                          />
+                        )}
                       </div>
                     ) : answer.role === ERROR ? (
                       <div className={styles.chatMessageError}>
@@ -796,7 +940,7 @@ const Chat = () => {
                           <span>Error</span>
                         </Stack>
                         <span className={styles.chatMessageErrorContent}>
-                          {answer.content}
+                          {typeof answer.content === "string" && answer.content}
                         </span>
                       </div>
                     ) : null}
